@@ -10,7 +10,7 @@ import { SOLO_SONGS } from "../lib/soloSongs.js";
 const ANSWER_SECONDS = 15;
 const TOTAL_ROUNDS = 10;
 
-function PreviewPlayer({ song, playing, paused }) {
+function PreviewPlayer({ song, playing, paused, onTogglePlay }) {
   const player = useAudioPlayer(song?.previewUrl ? { uri: song.previewUrl } : undefined);
 
   useEffect(() => {
@@ -21,9 +21,13 @@ function PreviewPlayer({ song, playing, paused }) {
     } catch {}
   }, [song?.previewUrl, playing, paused]);
 
-  if (!playing) return null;
-  if (paused) return <Text style={styles.pausedHint}>⏸ Musik pausiert – sprich jetzt!</Text>;
-  return <ActivityIndicator color="#7c4dff" style={{ marginBottom: 12 }} />;
+  return (
+    <View style={{ alignItems: "center", marginBottom: 12 }}>
+      <TouchableOpacity style={styles.playButton} onPress={onTogglePlay}>
+        <Text style={styles.playButtonText}>{paused ? "▶︎ Musik weiter" : "⏸ Musik pausieren"}</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 export default function SoloScreen({ onLeave }) {
@@ -38,6 +42,8 @@ export default function SoloScreen({ onLeave }) {
   const [listening, setListening] = useState(false);
   const [finished, setFinished] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [manualPaused, setManualPaused] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
   const roundStartRef = useRef(Date.now());
   const currentRef = useRef(null);
 
@@ -54,7 +60,7 @@ export default function SoloScreen({ onLeave }) {
         if (parsed?.artist) setArtist((prev) => prev || parsed.artist);
         if (!parsed?.title && !parsed?.artist) setTitle(text);
       },
-      () => setListening(false)
+      (err) => { setListening(false); setVoiceError(String(err)); }
     );
     return () => cleanup && cleanup();
   }, []);
@@ -128,16 +134,19 @@ export default function SoloScreen({ onLeave }) {
 
   const toggleVoice = async () => {
     if (!current) return;
+    setVoiceError("");
     try {
       if (listening) {
         await stopListening();
         setListening(false);
-      } else {
-        setListening(true);
-        await startListening("de-DE");
+        return;
       }
-    } catch {
+      await stopListening();
+      setListening(true);
+      await startListening("de-DE");
+    } catch (e) {
       setListening(false);
+      setVoiceError(e?.message || "Spracherkennung konnte nicht gestartet werden");
     }
   };
 
@@ -171,10 +180,16 @@ export default function SoloScreen({ onLeave }) {
         <>
           <Text style={styles.prompt}>Hörst du den Song? 🎧</Text>
           {playing ? (
-            <PreviewPlayer song={current} playing={playing} paused={listening} />
+            <PreviewPlayer
+              song={current}
+              playing={playing}
+              paused={listening || manualPaused}
+              onTogglePlay={() => setManualPaused((p) => !p)}
+            />
           ) : (
             <Text style={styles.hint}>{loadError || "Lade Snippet…"}</Text>
           )}
+          {voiceError ? <Text style={styles.errorText}>⚠️ {voiceError}</Text> : null}
           <TextInput style={styles.input} placeholder="Titel" placeholderTextColor="#666" value={title} onChangeText={setTitle} />
           <TouchableOpacity style={[styles.micButton, listening && styles.micActive]} onPress={toggleVoice}>
             <Text style={styles.micText}>{listening ? "● Sprich jetzt… (tippen zum Stoppen)" : "🎤 Titel & Interpret einsprechen"}</Text>
@@ -213,6 +228,9 @@ const styles = StyleSheet.create({
   prompt: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 8 },
   hint: { color: "#667", fontSize: 13, marginBottom: 16 },
   pausedHint: { color: "#ff9800", fontSize: 14, fontWeight: "700", marginBottom: 12, textAlign: "center" },
+  playButton: { backgroundColor: "#2a2a4a", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
+  playButtonText: { color: "#fff", fontWeight: "700" },
+  errorText: { color: "#ff6b6b", fontSize: 13, marginBottom: 12, textAlign: "center" },
   voiceHint: { color: "#9aa", fontSize: 12, marginBottom: 12, textAlign: "center" },
   input: { backgroundColor: "#1a1a2e", color: "#fff", borderRadius: 10, padding: 14, fontSize: 16, marginBottom: 12 },
   micButton: { backgroundColor: "#2a2a4a", borderRadius: 10, padding: 14, marginBottom: 12, alignItems: "center" },

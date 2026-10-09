@@ -1,31 +1,38 @@
 import Voice from "@react-native-voice/voice";
-import { Platform } from "react-native";
 
 export function initVoice(onResult, onError) {
-  Voice.onSpeechResults = (e) => {
+  const resultHandler = (e) => {
     const text = e.value?.[0] || "";
-    onResult(text);
+    if (text) onResult(text);
   };
-  Voice.onSpeechError = (e) => onError(e.error?.message || "Speech error");
+  const errorHandler = (e) => onError(e?.error?.message || e?.error?.code || "Speech error");
+  const startHandler = () => {};
+  const endHandler = () => {};
+
+  Voice.onSpeechResults = resultHandler;
+  Voice.onSpeechPartialResults = resultHandler;
+  Voice.onSpeechError = errorHandler;
+  Voice.onSpeechStart = startHandler;
+  Voice.onSpeechEnd = endHandler;
+
   return async () => {
-    try {
-      await Voice.stop();
-    } catch {}
-    try {
-      await Voice.destroy();
-    } catch {}
-    Voice.destroy = Voice.destroy?.bind(Voice);
+    Voice.onSpeechResults = null;
+    Voice.onSpeechPartialResults = null;
+    Voice.onSpeechError = null;
+    Voice.onSpeechStart = null;
+    Voice.onSpeechEnd = null;
+    try { await Voice.destroy(); } catch {}
   };
 }
 
 export async function startListening(lang = "de-DE") {
   const supported = await Voice.isSpeechAvailable();
   if (!supported) throw new Error("Spracherkennung auf diesem Gerät nicht verfügbar");
+  try { await Voice.stop(); } catch {}
   await Voice.start(lang);
 }
 
 export async function stopListening() {
-  try {
-    await Voice.stop();
-  } catch {}
+  try { await Voice.stop(); } catch {}
+  try { await Voice.cancel(); } catch {}
 }
