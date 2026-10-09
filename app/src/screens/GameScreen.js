@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
-import { Audio } from "expo-av";
+import { createAudioPlayer } from "expo-audio";
 import { onMessage, send } from "../lib/socket.js";
 import { initVoice, startListening, stopListening } from "../lib/voice.js";
 
@@ -34,14 +34,17 @@ export default function GameScreen({ session, initialRound, onLeave }) {
   }, []);
 
   useEffect(() => {
-    if (round?.previewUrl && !soundRef.current) {
-      Audio.Sound.createAsync({ uri: round.previewUrl }, { shouldPlay: true })
-        .then(({ sound }) => (soundRef.current = sound))
-        .catch(() => {});
+    if (round?.previewUrl) {
+      try {
+        soundRef.current = createAudioPlayer({ uri: round.previewUrl });
+        soundRef.current.play();
+      } catch {}
     }
     return () => {
-      soundRef.current?.unloadAsync();
-      soundRef.current = null;
+      if (soundRef.current) {
+        try { soundRef.current.release(); } catch {}
+        soundRef.current = null;
+      }
     };
   }, [round?.round]);
 
