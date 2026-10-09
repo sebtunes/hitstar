@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { initVoice, startListening, stopListening } from "../lib/voice.js";
+import { fetchPreviewUrl } from "../lib/itunes.js";
+import { createAudioPlayer } from "expo-audio";
 import { normalize, fuzzyMatch, levenshtein } from "../lib/match.js";
 import { SOLO_SONGS } from "../lib/soloSongs.js";
 
@@ -20,15 +22,46 @@ export default function SoloScreen({ onLeave }) {
   const [finished, setFinished] = useState(false);
   const roundStartRef = useRef(Date.now());
 
+  const playerRef = useRef(null);
+
   useEffect(() => {
     const shuffled = [...SOLO_SONGS].sort(() => Math.random() - 0.5).slice(0, TOTAL_ROUNDS);
-    setSongs(shuffled);
+    setSongs(shuffled.map((s) => ({ ...s, previewUrl: null })));
     roundStartRef.current = Date.now();
     const cleanup = initVoice((text) => { setListening(false); if (text) setTitle(text); }, () => setListening(false));
-    return () => cleanup && cleanup();
+    return () => {
+      cleanup && cleanup();
+      stopPreview();
+    };
   }, []);
 
   const current = songs[roundIdx];
+
+  const stopPreview = () => {
+    if (playerRef.current) {
+      try { playerRef.current.release(); } catch {}
+      playerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!current || feedback || current.previewUrl === null) return;
+    let cancelled = false;
+    (async () => {
+      const result = await fetchPreviewUrl(current.title, current.artist);
+      if (!result || cancelled) return;
+      setSongs((prev) => {
+        const copy = [...prev];
+        copy[roundIdx] = { ...copy[roundIdx], previewUrl: result.previewUrl };
+        return copy;
+      });
+      try {
+        playerRef.current = createAudioPlayer({ uri: result.previewUrl });
+        playerRef.current.play();
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [roundIdx, feedback]);
 
   useEffect(() => {
     if (!current || finished) return;
@@ -102,8 +135,8 @@ export default function SoloScreen({ onLeave }) {
 
       {!feedback ? (
         <>
-          <Text style={styles.prompt}>Überlege: Welcher Song ist das? 🎧</Text>
-          <Text style={styles.hint}>(Demo-Modus: Titel aus der eingebauten Liste)</Text>
+          <Text style={styles.prompt}>Hörst du den Song? 🎧</Text>
+          {!current.previewUrl && !feedback && <Text style={styles.hint}>Lade Snippet…</Text>}
           <TextInput style={styles.input} placeholder="Titel" placeholderTextColor="#666" value={title} onChangeText={setTitle} />
           <TouchableOpacity style={[styles.micButton, listening && styles.micActive]} onPress={toggleVoice}>
             <Text style={styles.micText}>{listening ? "● Aufnahme…" : "🎤 Titel einsprechen"}</Text>
