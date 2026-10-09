@@ -15,8 +15,15 @@
     },
     "android": {
       "package": "com.example.songclash",
-      "permissions": ["RECORD_AUDIO", "INTERNET"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "INTERNET"
+      ]
     },
-    "plugins": ["expo-av"]
+    "plugins": [
+      "expo-av",
+      "expo-asset",
+      "expo-font"
+    ]
   }
 }
