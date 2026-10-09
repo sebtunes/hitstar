@@ -1,38 +1,31 @@
-import Voice from "@react-native-voice/voice";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 
 export function initVoice(onResult, onError) {
-  const resultHandler = (e) => {
-    const text = e.value?.[0] || "";
-    if (text) onResult(text);
-  };
-  const errorHandler = (e) => onError(e?.error?.message || e?.error?.code || "Speech error");
-  const startHandler = () => {};
-  const endHandler = () => {};
-
-  Voice.onSpeechResults = resultHandler;
-  Voice.onSpeechPartialResults = resultHandler;
-  Voice.onSpeechError = errorHandler;
-  Voice.onSpeechStart = startHandler;
-  Voice.onSpeechEnd = endHandler;
-
-  return async () => {
-    Voice.onSpeechResults = null;
-    Voice.onSpeechPartialResults = null;
-    Voice.onSpeechError = null;
-    Voice.onSpeechStart = null;
-    Voice.onSpeechEnd = null;
-    try { await Voice.destroy(); } catch {}
-  };
+  const cleanup = useSpeechRecognitionEvent({
+    result: (event) => {
+      const text = event?.results?.[0]?.transcript || "";
+      if (text) onResult(text);
+    },
+    error: (event) => onError(event?.error?.message || "Spracherkennungsfehler"),
+  });
+  return cleanup;
 }
 
 export async function startListening(lang = "de-DE") {
-  const supported = await Voice.isSpeechAvailable();
+  const supported = await ExpoSpeechRecognitionModule.supportsSpeechRecognition();
   if (!supported) throw new Error("Spracherkennung auf diesem Gerät nicht verfügbar");
-  try { await Voice.stop(); } catch {}
-  await Voice.start(lang);
+  ExpoSpeechRecognitionModule.start({
+    lang,
+    interimResults: true,
+    continuous: false,
+  });
 }
 
 export async function stopListening() {
-  try { await Voice.stop(); } catch {}
-  try { await Voice.cancel(); } catch {}
+  try {
+    ExpoSpeechRecognitionModule.stop();
+  } catch {}
 }

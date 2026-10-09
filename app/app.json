@@ -10,7 +10,7 @@
       "bundleIdentifier": "com.example.songclash",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "SongClash nutzt die Spracheingabe, damit du Titel und Interpreten einsprechen kannst.",
-        "NSMicrophoneUsageDescription": "SongClash braucht das Mikrofon f\u00fcr die Spracheingabe."
+        "NSMicrophoneUsageDescription": "SongClash braucht das Mikrofon für die Spracheingabe."
       }
     },
     "android": {
@@ -24,7 +24,8 @@
       "expo-asset",
       "expo-font",
       "expo-audio",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-speech-recognition"
     ]
   }
 }
