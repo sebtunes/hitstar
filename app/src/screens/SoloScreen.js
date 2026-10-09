@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { initVoice, startListening, stopListening } from "../lib/voice.js";
 import { fetchPreviewUrl } from "../lib/itunes.js";
+import { parseSpeech } from "../lib/speechParse.js";
 import { useAudioPlayer } from "expo-audio";
 import { normalize, fuzzyMatch } from "../lib/match.js";
 import { SOLO_SONGS } from "../lib/soloSongs.js";
@@ -9,21 +10,19 @@ import { SOLO_SONGS } from "../lib/soloSongs.js";
 const ANSWER_SECONDS = 15;
 const TOTAL_ROUNDS = 10;
 
-function PreviewPlayer({ song, playing }) {
+function PreviewPlayer({ song, playing, paused }) {
   const player = useAudioPlayer(song?.previewUrl ? { uri: song.previewUrl } : undefined);
 
   useEffect(() => {
-    if (playing && song?.previewUrl && player) {
-      try {
-        player.play();
-      } catch {}
-    }
-    return () => {
-      try { player?.pause(); } catch {}
-    };
-  }, [song?.previewUrl, playing]);
+    if (!player || !playing) return;
+    try {
+      if (paused) player.pause();
+      else player.play();
+    } catch {}
+  }, [song?.previewUrl, playing, paused]);
 
   if (!playing) return null;
+  if (paused) return <Text style={styles.pausedHint}>⏸ Musik pausiert – sprich jetzt!</Text>;
   return <ActivityIndicator color="#7c4dff" style={{ marginBottom: 12 }} />;
 }
 
@@ -40,16 +39,28 @@ export default function SoloScreen({ onLeave }) {
   const [finished, setFinished] = useState(false);
   const [loadError, setLoadError] = useState("");
   const roundStartRef = useRef(Date.now());
+  const currentRef = useRef(null);
 
   useEffect(() => {
     const shuffled = [...SOLO_SONGS].sort(() => Math.random() - 0.5).slice(0, TOTAL_ROUNDS);
     setSongs(shuffled.map((s) => ({ ...s, previewUrl: null, loading: true })));
     roundStartRef.current = Date.now();
-    const cleanup = initVoice((text) => { setListening(false); if (text) setTitle(text); }, () => setListening(false));
+    const cleanup = initVoice(
+      (text) => {
+        setListening(false);
+        if (!text) return;
+        const parsed = parseSpeech(text, currentRef.current);
+        if (parsed?.title) setTitle((prev) => prev || parsed.title);
+        if (parsed?.artist) setArtist((prev) => prev || parsed.artist);
+        if (!parsed?.title && !parsed?.artist) setTitle(text);
+      },
+      () => setListening(false)
+    );
     return () => cleanup && cleanup();
   }, []);
 
   const current = songs[roundIdx];
+  currentRef.current = current;
 
   useEffect(() => {
     if (!current || feedback || current.previewUrl !== null) return;
@@ -116,10 +127,18 @@ export default function SoloScreen({ onLeave }) {
   };
 
   const toggleVoice = async () => {
+    if (!current) return;
     try {
-      if (listening) { await stopListening(); setListening(false); }
-      else { setListening(true); await startListening("de-DE"); }
-    } catch { setListening(false); }
+      if (listening) {
+        await stopListening();
+        setListening(false);
+      } else {
+        setListening(true);
+        await startListening("de-DE");
+      }
+    } catch {
+      setListening(false);
+    }
   };
 
   if (finished) {
@@ -152,14 +171,15 @@ export default function SoloScreen({ onLeave }) {
         <>
           <Text style={styles.prompt}>Hörst du den Song? 🎧</Text>
           {playing ? (
-            <PreviewPlayer song={current} playing={playing} />
+            <PreviewPlayer song={current} playing={playing} paused={listening} />
           ) : (
             <Text style={styles.hint}>{loadError || "Lade Snippet…"}</Text>
           )}
           <TextInput style={styles.input} placeholder="Titel" placeholderTextColor="#666" value={title} onChangeText={setTitle} />
           <TouchableOpacity style={[styles.micButton, listening && styles.micActive]} onPress={toggleVoice}>
-            <Text style={styles.micText}>{listening ? "● Aufnahme…" : "🎤 Titel einsprechen"}</Text>
+            <Text style={styles.micText}>{listening ? "● Sprich jetzt… (tippen zum Stoppen)" : "🎤 Titel & Interpret einsprechen"}</Text>
           </TouchableOpacity>
+          {listening && <Text style={styles.voiceHint}>Sag z. B. „Bohemian Rhapsody von Queen" – Reihenfolge egal!</Text>}
           <TextInput style={styles.input} placeholder="Interpret" placeholderTextColor="#666" value={artist} onChangeText={setArtist} />
           <TextInput style={styles.input} placeholder="Jahr (Bonus!)" placeholderTextColor="#666" value={year} onChangeText={setYear} keyboardType="number-pad" maxLength={4} />
           <TouchableOpacity style={styles.submit} onPress={() => submit(false)}>
@@ -192,6 +212,8 @@ const styles = StyleSheet.create({
   timerFill: { height: 8, backgroundColor: "#7c4dff" },
   prompt: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 8 },
   hint: { color: "#667", fontSize: 13, marginBottom: 16 },
+  pausedHint: { color: "#ff9800", fontSize: 14, fontWeight: "700", marginBottom: 12, textAlign: "center" },
+  voiceHint: { color: "#9aa", fontSize: 12, marginBottom: 12, textAlign: "center" },
   input: { backgroundColor: "#1a1a2e", color: "#fff", borderRadius: 10, padding: 14, fontSize: 16, marginBottom: 12 },
   micButton: { backgroundColor: "#2a2a4a", borderRadius: 10, padding: 14, marginBottom: 12, alignItems: "center" },
   micActive: { backgroundColor: "#ff5252" },
