@@ -1,13 +1,31 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { initVoice, startListening, stopListening } from "../lib/voice.js";
 import { fetchPreviewUrl } from "../lib/itunes.js";
-import { createAudioPlayer } from "expo-audio";
-import { normalize, fuzzyMatch, levenshtein } from "../lib/match.js";
+import { useAudioPlayer } from "expo-audio";
+import { normalize, fuzzyMatch } from "../lib/match.js";
 import { SOLO_SONGS } from "../lib/soloSongs.js";
 
 const ANSWER_SECONDS = 15;
 const TOTAL_ROUNDS = 10;
+
+function PreviewPlayer({ song, playing }) {
+  const player = useAudioPlayer(song?.previewUrl ? { uri: song.previewUrl } : undefined);
+
+  useEffect(() => {
+    if (playing && song?.previewUrl && player) {
+      try {
+        player.play();
+      } catch {}
+    }
+    return () => {
+      try { player?.pause(); } catch {}
+    };
+  }, [song?.previewUrl, playing]);
+
+  if (!playing) return null;
+  return <ActivityIndicator color="#7c4dff" style={{ marginBottom: 12 }} />;
+}
 
 export default function SoloScreen({ onLeave }) {
   const [roundIdx, setRoundIdx] = useState(0);
@@ -20,48 +38,42 @@ export default function SoloScreen({ onLeave }) {
   const [score, setScore] = useState(0);
   const [listening, setListening] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const roundStartRef = useRef(Date.now());
-
-  const playerRef = useRef(null);
 
   useEffect(() => {
     const shuffled = [...SOLO_SONGS].sort(() => Math.random() - 0.5).slice(0, TOTAL_ROUNDS);
-    setSongs(shuffled.map((s) => ({ ...s, previewUrl: null })));
+    setSongs(shuffled.map((s) => ({ ...s, previewUrl: null, loading: true })));
     roundStartRef.current = Date.now();
     const cleanup = initVoice((text) => { setListening(false); if (text) setTitle(text); }, () => setListening(false));
-    return () => {
-      cleanup && cleanup();
-      stopPreview();
-    };
+    return () => cleanup && cleanup();
   }, []);
 
   const current = songs[roundIdx];
 
-  const stopPreview = () => {
-    if (playerRef.current) {
-      try { playerRef.current.release(); } catch {}
-      playerRef.current = null;
-    }
-  };
-
   useEffect(() => {
-    if (!current || feedback || current.previewUrl === null) return;
+    if (!current || feedback || current.previewUrl !== null) return;
     let cancelled = false;
     (async () => {
       const result = await fetchPreviewUrl(current.title, current.artist);
-      if (!result || cancelled) return;
+      if (cancelled) return;
+      if (!result) {
+        setLoadError("Snippet nicht gefunden – rate aus dem Gedächtnis!");
+        setSongs((prev) => {
+          const copy = [...prev];
+          copy[roundIdx] = { ...copy[roundIdx], previewUrl: undefined, loading: false };
+          return copy;
+        });
+        return;
+      }
       setSongs((prev) => {
         const copy = [...prev];
-        copy[roundIdx] = { ...copy[roundIdx], previewUrl: result.previewUrl };
+        copy[roundIdx] = { ...copy[roundIdx], previewUrl: result.previewUrl, loading: false };
         return copy;
       });
-      try {
-        playerRef.current = createAudioPlayer({ uri: result.previewUrl });
-        playerRef.current.play();
-      } catch {}
     })();
     return () => { cancelled = true; };
-  }, [roundIdx, feedback]);
+  }, [roundIdx, current?.previewUrl, feedback]);
 
   useEffect(() => {
     if (!current || finished) return;
@@ -98,6 +110,7 @@ export default function SoloScreen({ onLeave }) {
     setRoundIdx((i) => i + 1);
     setTitle(""); setArtist(""); setYear("");
     setFeedback(null);
+    setLoadError("");
     setTimeLeft(ANSWER_SECONDS);
     roundStartRef.current = Date.now();
   };
@@ -123,6 +136,8 @@ export default function SoloScreen({ onLeave }) {
 
   if (!current) return <View style={styles.container}><Text style={styles.info}>Lade…</Text></View>;
 
+  const playing = !feedback && Boolean(current.previewUrl);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -136,7 +151,11 @@ export default function SoloScreen({ onLeave }) {
       {!feedback ? (
         <>
           <Text style={styles.prompt}>Hörst du den Song? 🎧</Text>
-          {!current.previewUrl && !feedback && <Text style={styles.hint}>Lade Snippet…</Text>}
+          {playing ? (
+            <PreviewPlayer song={current} playing={playing} />
+          ) : (
+            <Text style={styles.hint}>{loadError || "Lade Snippet…"}</Text>
+          )}
           <TextInput style={styles.input} placeholder="Titel" placeholderTextColor="#666" value={title} onChangeText={setTitle} />
           <TouchableOpacity style={[styles.micButton, listening && styles.micActive]} onPress={toggleVoice}>
             <Text style={styles.micText}>{listening ? "● Aufnahme…" : "🎤 Titel einsprechen"}</Text>
@@ -171,8 +190,8 @@ const styles = StyleSheet.create({
   score: { color: "#7c4dff", fontSize: 16, fontWeight: "700", marginVertical: 6 },
   timerBar: { height: 8, backgroundColor: "#1a1a2e", borderRadius: 4, overflow: "hidden" },
   timerFill: { height: 8, backgroundColor: "#7c4dff" },
-  prompt: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 4 },
-  hint: { color: "#667", fontSize: 12, marginBottom: 16 },
+  prompt: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 8 },
+  hint: { color: "#667", fontSize: 13, marginBottom: 16 },
   input: { backgroundColor: "#1a1a2e", color: "#fff", borderRadius: 10, padding: 14, fontSize: 16, marginBottom: 12 },
   micButton: { backgroundColor: "#2a2a4a", borderRadius: 10, padding: 14, marginBottom: 12, alignItems: "center" },
   micActive: { backgroundColor: "#ff5252" },
